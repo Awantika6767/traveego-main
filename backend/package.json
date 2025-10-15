@@ -18,11 +18,14 @@
     "mysql2": "^3.0.0",
     "reflect-metadata": "^0.1.13",
     "typeorm": "^0.3.17",
-    "uuid": "^9.0.0"
+    "uuid": "^9.0.0",
+    "@aws-sdk/client-s3": "^3.520.0"
   },
   "devDependencies": {
     "@nestjs/cli": "^10.0.0",
+    "@types/multer": "^2.0.0",
     "ts-node": "^10.9.1",
-    "typescript": "^5.1.6"
+    "typescript": "^5.1.6",
+    "@types/express": "^4.17.17"
   }
 }

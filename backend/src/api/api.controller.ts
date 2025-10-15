@@ -1,15 +1,24 @@
+import type { Express } from 'express';
 import {
   Controller, Post, Body, Get, Query, Param, Put, UploadedFile, UseInterceptors, BadRequestException,
 } from '@nestjs/common';
 import { ApiService } from './api.service';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { diskStorage } from 'multer';
+import multer from 'multer';
 import * as fs from 'fs';
 import { join } from 'path';
-import type { Express } from 'express';
+import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
+import { randomBytes } from 'crypto';
 
-const uploadDir = process.env.UPLOAD_DIR || './uploads';
-if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
+const uploadMemory = multer.memoryStorage();
+
+const s3 = new S3Client({
+  region: process.env.AWS_REGION,
+  credentials: process.env.AWS_ACCESS_KEY_ID ? {
+    accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+  } : undefined,
+});
 
 @Controller('api')
 export class ApiController {
@@ -146,18 +155,26 @@ export class ApiController {
 
   // Upload
   @Post('upload')
-  @UseInterceptors(FileInterceptor('file', {
-    storage: diskStorage({
-      destination: uploadDir,
-      filename: (req, file, cb) => {
-        const unique = `${Date.now()}-${Math.random().toString(36).substring(2, 12)}-${file.originalname}`;
-        cb(null, unique);
-      },
-    })
-  }))
+  @UseInterceptors(FileInterceptor('file', { storage: uploadMemory }))
   async uploadFile(@UploadedFile() file: Express.Multer.File) {
     if (!file) throw new BadRequestException('file required');
-    return { file_url: `/uploads/${file.filename}` };
+
+    const ext = file.originalname && file.originalname.includes('.') ? file.originalname.split('.').pop() : '';
+    const key = `${Date.now()}-${randomBytes(6).toString('hex')}${ext ? '.' + ext : ''}`;
+    const bucket = process.env.AWS_BUCKET;
+    if (!bucket) throw new BadRequestException('S3 bucket not configured (AWS_BUCKET)');
+
+    const cmd = new PutObjectCommand({
+      Bucket: bucket,
+      Key: key,
+      Body: file.buffer,
+      ContentType: file.mimetype,
+      ACL: 'private'
+    });
+    await s3.send(cmd);
+
+    const fileUrl = `https://${bucket}.s3.${process.env.AWS_REGION}.amazonaws.com/${key}`;
+    return { file_url: fileUrl, key };
   }
 
   // Dashboard
